@@ -10,4 +10,7 @@ export class RegisterDto {
 
   @IsEnum(Role)
   role!: Role;
+
+  @IsString()
+  phone: string;
 }

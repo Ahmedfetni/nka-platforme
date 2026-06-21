@@ -1,20 +1,34 @@
-import { Strategy } from './../../../node_modules/effect/dist/dts/Queue.d';
-import { Injectable, UanthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 
-import { ExtractJwt, Strategy, Strategy } from 'passport-jwt';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { Role } from '@prisma/client';
 
-
-//TODO explain the classes hiarachy in nestjs 
+interface JwtPayload {
+  sub: number;
+  email: string;
+  role: Role;
+}
 @Injectable()
-export class JwtStrategy extands PassportStrategy(Strategy) {
-    constructor(private prisma: PrismaService ) {
-        super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-            ignoreExpiration: false,
-            secretOrkey: process
-        })
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor(private prisma: PrismaService) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: process.env.JWT_SECRET ?? 'secret',
+    });
+  }
+  async validate(payload: JwtPayload) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: payload.sub,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException();
     }
+    return user;
+  }
 }
