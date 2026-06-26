@@ -1,2 +1,0 @@
-regex:.*Generated with.*Claude Code.*==>
-regex:Co-Authored-By: Claude.*==>
