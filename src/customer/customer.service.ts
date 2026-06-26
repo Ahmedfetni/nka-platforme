@@ -1,25 +1,30 @@
-import { PrismaService } from './../prisma/prisma.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CreateCustomerProfileDto } from './dto/create-customer-profile.dto';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
-import { NotFoundException } from '@nestjs/common';
+import { CustomerProfile } from './entities/customer.entity';
+
 @Injectable()
 export class CustomerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(CustomerProfile)
+    private readonly customerRepository: Repository<CustomerProfile>,
+  ) {}
+
   create(dto: CreateCustomerProfileDto, userId: number) {
-    return this.prisma.customerProfile.create({
-      data: {
-        userId: userId,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phoneNumber: dto.phoneNumber,
-        address: dto.address,
-      },
+    const profile = this.customerRepository.create({
+      userId,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phoneNumber: dto.phoneNumber,
+      address: dto.address,
     });
+    return this.customerRepository.save(profile);
   }
 
   findAll() {
-    return this.prisma.customerProfile.findMany({
+    return this.customerRepository.find({
       select: {
         userId: true,
         firstName: true,
@@ -31,24 +36,20 @@ export class CustomerService {
   }
 
   findOne(userId: number) {
-    return this.prisma.customerProfile.findUnique({
-      where: {
-        userId,
-      },
+    return this.customerRepository.findOne({
+      where: { userId },
     });
   }
 
   async update(id: number, dto: UpdateCustomerProfileDto) {
-    const profile = await this.prisma.customerProfile.findUnique({
+    const profile = await this.customerRepository.findOne({
       where: { id },
     });
     if (!profile) {
       throw new NotFoundException('that profile is not found');
     }
-    return this.prisma.customerProfile.update({
-      where: { id },
-      data: dto,
-    });
+    Object.assign(profile, dto);
+    return this.customerRepository.save(profile);
   }
 
   remove(id: number) {

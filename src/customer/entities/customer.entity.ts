@@ -1,5 +1,15 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  OneToMany,
+  OneToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import { Booking } from '../../bookings/entities/bookings.entity';
 
 @Entity('customer_profiles')
 export class CustomerProfile {
@@ -30,4 +40,7 @@ export class CustomerProfile {
   @OneToOne(() => User, (u) => u.customerProfile)
   @JoinColumn()
   user: User;
+
+  @OneToMany(() => Booking, (b) => b.customer)
+  bookings: Booking[];
 }
