@@ -1,25 +1,25 @@
 import { Injectable, ConflictException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
+import { User } from './entities/user.entity';
 
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
+  ) {}
 
   async findAllUsers() {
-    return await this.prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        role: true,
-      },
+    return await this.userRepository.find({
+      select: { id: true, email: true, role: true },
     });
   }
   // Creating a user function
   async createUser(dto: CreateUserDto) {
-    const userExist = await this.prisma.user.findUnique({
+    const userExist = await this.userRepository.findOne({
       where: {
         email: dto.email,
       },
@@ -30,27 +30,24 @@ export class UsersService {
       );
     }
     const hashedPass = await bcrypt.hash(dto.password, 10);
-    return await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password: hashedPass,
-        role: dto.role,
-        phone: dto.phone,
-      },
-
-      select: {
-        id: true,
-        email: true,
-        role: true,
-      },
+    const user = this.userRepository.create({
+      email: dto.email,
+      password: hashedPass,
+      role: dto.role,
+      phone: dto.phone,
     });
+
+    const saved = await this.userRepository.save(user);
+    return {
+      id: saved.id,
+      eamil: saved.email,
+      role: saved.role,
+    };
   }
   // login function
   async findUsinEmail(email: string) {
-    return await this.prisma.user.findUnique({
-      where: {
-        email,
-      },
+    return await this.userRepository.findOne({
+      where: { email },
     });
   }
 }
