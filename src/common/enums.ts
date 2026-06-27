@@ -1,7 +1,7 @@
 // Central enum defintions for all database enum types
 export enum Role {
   ADMIN = 'ADMIN',
-  CLINET = 'CLIENT',
+  CLIENT = 'CLIENT',
   WORKER = 'WORKER',
 }
 

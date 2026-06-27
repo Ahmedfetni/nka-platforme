@@ -4,65 +4,85 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
-import { Role } from '@prisma/client';
+import { Role } from '../common/enums';
+import { Booking } from './entities/bookings.entity';
+import { User } from '../users/entities/user.entity';
+import { CustomerProfile } from '../customer/entities/customer.entity';
+
+const BOOKING_RELATIONS = {
+  customer: {
+    user: true,
+  },
+  assignments: {
+    worker: {
+      user: true,
+    },
+  },
+};
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(Booking)
+    private readonly bookingRepository: Repository<Booking>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(CustomerProfile)
+    private readonly customerRepository: Repository<CustomerProfile>,
+  ) {}
+
+  // Remove password fields from any loaded user relations, mirroring the
+  // Prisma `select` that only exposed id/email/role/phone.
+  private sanitize<T>(booking: T): T {
+    if (!booking) return booking;
+    const b = booking as any;
+    if (b.customer?.user) delete b.customer.user.password;
+    if (Array.isArray(b.assignments)) {
+      for (const a of b.assignments) {
+        if (a.worker?.user) delete a.worker.user.password;
+      }
+    }
+    return booking;
+  }
 
   async create(userId: number, createBookingDto: CreateBookingDto) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.userRepository.findOne({
       where: { id: userId },
-      include: {
-        customerProfile: true,
-      },
+      relations: { customerProfile: true },
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (user.role !== Role.CLIENT) {
-      throw new ForbiddenException('Only clients can create bookings');
+    if (user.role !== (Role.CLIENT as unknown as typeof user.role)) {
+      throw new ForbiddenException('cant create a  bookings');
     }
 
     if (!user.customerProfile) {
       throw new BadRequestException('You must create a customer profile first');
     }
 
-    return this.prisma.booking.create({
-      data: {
-        title: createBookingDto.title,
-        description: createBookingDto.description,
-        address: createBookingDto.address,
-        scheduledDate: new Date(createBookingDto.scheduledDate),
-        priority: createBookingDto.priority,
-        requiredWorkers: createBookingDto.requiredWorkers,
-        customerId: user.customerProfile.id,
-      },
-      include: {
-        customer: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                role: true,
-                phone: true,
-              },
-            },
-          },
-        },
-        assignments: true,
-      },
+    const booking = this.bookingRepository.create({
+      title: createBookingDto.title,
+      description: createBookingDto.description,
+      address: createBookingDto.address,
+      scheduledDate: new Date(createBookingDto.scheduledDate),
+      priority: createBookingDto.priority,
+      requiredWorkers: createBookingDto.requiredWorkers,
+      customerId: user.customerProfile.id,
     });
+
+    const saved = await this.bookingRepository.save(booking);
+    return this.findOne(saved.id);
   }
 
   async findMyBookings(userId: number) {
-    const customerProfile = await this.prisma.customerProfile.findUnique({
+    const customerProfile = await this.customerRepository.findOne({
       where: { userId },
     });
 
@@ -70,130 +90,61 @@ export class BookingsService {
       throw new BadRequestException('Customer profile not found');
     }
 
-    return this.prisma.booking.findMany({
-      where: {
-        customerId: customerProfile.id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      include: {
+    const bookings = await this.bookingRepository.find({
+      where: { customerId: customerProfile.id },
+      order: { createdAt: 'DESC' },
+      relations: {
         assignments: {
-          include: {
-            worker: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    phone: true,
-                  },
-                },
-              },
-            },
+          worker: {
+            user: true,
           },
         },
       },
     });
+
+    return bookings.map((b) => this.sanitize(b));
   }
 
   async findAll() {
-    return this.prisma.booking.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
-      include: {
-        customer: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                role: true,
-                phone: true,
-              },
-            },
-          },
-        },
-        assignments: {
-          include: {
-            worker: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    phone: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+    const bookings = await this.bookingRepository.find({
+      order: { createdAt: 'DESC' },
+      relations: BOOKING_RELATIONS,
     });
+
+    return bookings.map((b) => this.sanitize(b));
   }
 
   async findOne(id: number) {
-    const booking = await this.prisma.booking.findUnique({
+    const booking = await this.bookingRepository.findOne({
       where: { id },
-      include: {
-        customer: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                role: true,
-                phone: true,
-              },
-            },
-          },
-        },
-        assignments: {
-          include: {
-            worker: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    phone: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      relations: BOOKING_RELATIONS,
     });
 
     if (!booking) {
       throw new NotFoundException('Booking not found');
     }
 
-    return booking;
+    return this.sanitize(booking);
   }
 
   async update(id: number, updateBookingDto: UpdateBookingDto) {
     await this.findOne(id);
 
-    return this.prisma.booking.update({
-      where: { id },
-      data: {
-        ...updateBookingDto,
-        scheduledDate: updateBookingDto.scheduledDate
-          ? new Date(updateBookingDto.scheduledDate)
-          : undefined,
-      },
+    const payload = updateBookingDto as any;
+    const { scheduledDate, ...rest } = payload;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    await this.bookingRepository.update(id, {
+      ...rest,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      ...(scheduledDate ? { scheduledDate: new Date(scheduledDate) } : {}),
     });
+
+    return this.findOne(id);
   }
 
   async remove(id: number) {
-    await this.findOne(id);
-
-    return this.prisma.booking.delete({
-      where: { id },
-    });
+    const booking = await this.findOne(id);
+    await this.bookingRepository.delete(id);
+    return booking;
   }
 }
